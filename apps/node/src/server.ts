@@ -1,11 +1,11 @@
 import Fastify from "fastify";
 import { isAddress } from "viem";
-import { start, stop } from "./process.js";
+import { NodeManager } from "./manager.js";
 import { InMemoryApplicationRepository } from "./repository.js";
 import * as API from "./types.js";
 
-export const createServer = () => {
-    const manager = new InMemoryApplicationRepository();
+export const createServer = (manager: NodeManager) => {
+    const repository = new InMemoryApplicationRepository();
     const fastify = Fastify({ logger: true });
 
     // list of application
@@ -15,8 +15,12 @@ export const createServer = () => {
     }>("/applications", async (request, reply) => {
         const offset = request.query?.offset ?? 0;
         const limit = request.query?.limit ?? 100;
-        const data = await manager.list(offset, limit, request.query?.status);
-        const total_count = await manager.count(request.query?.status);
+        const data = await repository.list(
+            offset,
+            limit,
+            request.query?.status,
+        );
+        const total_count = await repository.count(request.query?.status);
         return reply.send({ total_count, data, limit, offset });
     });
 
@@ -33,7 +37,7 @@ export const createServer = () => {
                 message: "Invalid address format",
             });
         }
-        const application = await manager.find(address);
+        const application = await repository.find(address);
         if (application) {
             return reply.send(application);
         } else {
@@ -51,7 +55,7 @@ export const createServer = () => {
         Reply: API.ApplicationPutItemResponseBody;
     }>("/applications/:address", async (request, reply) => {
         const { address } = request.params;
-        const application = await manager.find(address);
+        const application = await repository.find(address);
         if (application) {
             if (
                 application.blockNumber === request.body.blockNumber &&
@@ -67,14 +71,14 @@ export const createServer = () => {
                 });
             }
         } else {
-            const application = await manager.create({
+            const application = await repository.create({
                 address,
                 ...request.body,
                 status: "starting",
             });
 
-            // start node
-            start(application);
+            // start node (don't await)
+            manager.start(application);
 
             return reply.status(200).send(application);
         }
@@ -85,12 +89,12 @@ export const createServer = () => {
         Reply: API.ApplicationDeleteItemResponseBody;
     }>("/applications/:address", async (request, reply) => {
         const { address } = request.params;
-        const application = await manager.find(address);
+        const application = await repository.find(address);
         if (application) {
-            await manager.remove(address);
+            await repository.remove(address);
 
             // stop node
-            await stop(application);
+            await manager.stop(application);
 
             return reply.status(204).send();
         } else {

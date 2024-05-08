@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 import { program } from "@commander-js/extra-typings";
+import { unixfs } from "@helia/unixfs";
+import { carfs } from "@sunodo/car-sync";
 import { InvalidOptionArgumentError } from "commander";
 import "dotenv/config";
+import { createHelia } from "helia";
+import { ProcessNodeManager } from "./process";
 import { createServer } from "./server";
 
 const numberValidator = (value: string) => {
@@ -20,11 +24,21 @@ program
         "-p, --port <port>",
         "port to listen on",
         numberValidator,
-        DEFAULT_PORT
+        DEFAULT_PORT,
     )
     .action(async (options) => {
         const { port } = options;
-        const server = createServer();
+
+        // create IPFS embedded node
+        const helia = await createHelia();
+        const fs = unixfs(helia);
+        const car = carfs(fs);
+
+        // creates a node manager using simple processes
+        const manager = new ProcessNodeManager({ car });
+
+        // create a HTTP server
+        const server = createServer(manager);
         await server.listen({ port });
     });
 program.parse();
